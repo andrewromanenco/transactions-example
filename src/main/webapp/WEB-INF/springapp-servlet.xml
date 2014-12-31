@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+    xmlns:context="http://www.springframework.org/schema/context"
+    xmlns:aop="http://www.springframework.org/schema/aop"
+    xmlns:tx="http://www.springframework.org/schema/tx"
+    xsi:schemaLocation="
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+       http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd
+       http://www.springframework.org/schema/tx http://www.springframework.org/schema/tx/spring-tx.xsd
+       http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd">
+
+    <!-- Will be found in JNDI by spring -->
+    <bean class="org.springframework.transaction.jta.JtaTransactionManager"
+            id="transactionManager"/>
+
+    <!-- Two in mem databases -->
+    <bean id="uniqueDataSource" class="org.apache.commons.dbcp.BasicDataSource"
+            destroy-method="close">
+        <property name="driverClassName" value="org.hsqldb.jdbcDriver"/>
+        <property name="url" value="jdbc:hsqldb:mem:a"/>
+        <property name="username" value="sa"/>
+        <property name="password" value=""/>
+    </bean>
+
+    <bean id="nonUniqueDataSource" class="org.apache.commons.dbcp.BasicDataSource"
+            destroy-method="close">
+        <property name="driverClassName" value="org.hsqldb.jdbcDriver"/>
+        <property name="url" value="jdbc:hsqldb:mem:b"/>
+        <property name="username" value="sa"/>
+        <property name="password" value=""/>
+    </bean>
+
+    <!-- DAOs for each database -->
+    <bean id="uniqueDao" class="com.romanenco.transactions.impl.UniqueDAOImpl"
+            init-method="init">
+        <constructor-arg ref="uniqueDataSource"/>
+    </bean>
+
+    <bean id="nonUniqueDao" class="com.romanenco.transactions.impl.NonUniqueDAOImpl"
+            init-method="init">
+        <constructor-arg ref="nonUniqueDataSource"/>
+    </bean>
+
+    <!-- Services and servlet -->
+    <bean id="service" class="com.romanenco.transactions.impl.ServiceImpl">
+        <constructor-arg ref="uniqueDao"/>
+        <constructor-arg ref="nonUniqueDao"/>
+    </bean>
+
+    <bean id="dtx" class="com.romanenco.transactions.DistributedTX">
+        <constructor-arg ref="service"/>
+    </bean>
+
+    <bean name="/test.do" class="com.romanenco.transactions.web.TestAction">
+        <constructor-arg ref="dtx"/>
+    </bean>
+
+    <!-- Declare transaction boundary and action for rollback -->
+    <tx:advice id="txAdvice" transaction-manager="transactionManager">
+        <tx:attributes>
+            <tx:method name="*" rollback-for="Throwable"/>
+        </tx:attributes>
+    </tx:advice>
+
+    <aop:config>
+        <aop:pointcut id="serviceOperation"
+                expression="execution(* com.romanenco.transactions.DistributedTX.*(..))"/>
+        <aop:advisor pointcut-ref="serviceOperation" advice-ref="txAdvice"/>
+    </aop:config>
+
+</beans>
